@@ -196,6 +196,9 @@ class PlatformDataProvider(object):
 
     def get_chassis(self):
         return self.__chassis
+    
+    def is_smart_switch(self):
+        return self.__chassis.is_smartswitch()
 
     def is_modular_chassis(self):
         return len(self.module_component_map) > 0
@@ -340,8 +343,8 @@ class PlatformComponentsParser(object):
 
     UTF8_ENCODING = "utf-8"
 
-    def __init__(self, is_modular_chassis):
-        self.__is_modular_chassis = is_modular_chassis
+    def __init__(self, is_non_smart_switch_modular_chassis):
+        self.__is_non_smart_switch_modular_chassis = is_non_smart_switch_modular_chassis
         self.__chassis_component_map = OrderedDict()
         self.__module_component_map = OrderedDict()
 
@@ -495,13 +498,13 @@ class PlatformComponentsParser(object):
             if self.CHASSIS_KEY not in data:
                 self.__parser_platform_fail("\"{}\" key hasn't been found".format(self.CHASSIS_KEY))
 
-            if not self.__is_modular_chassis:
+            if self.__is_non_smart_switch_modular_chassis:
                 if len(data) != 1:
                     self.__parser_platform_fail("unexpected number of records: key=root")
 
             self.__parse_chassis_section(data[self.CHASSIS_KEY])
 
-            if self.__is_modular_chassis:
+            if self.__is_non_smart_switch_modular_chassis:
                 if self.MODULE_KEY not in data:
                     self.__parser_platform_fail("\"{}\" key hasn't been found".format(self.MODULE_KEY))
 
@@ -535,8 +538,8 @@ class ComponentUpdateProvider(PlatformDataProvider):
             os.mkdir(FIRMWARE_AU_STATUS_DIR)
 
         self.__root_path = root_path
-
-        self.__pcp = PlatformComponentsParser(self.is_modular_chassis())
+        self.__is_non_smart_switch_modular_chassis = self.is_modular_chassis() and not self.is_smart_switch()
+        self.__pcp = PlatformComponentsParser(self.__is_non_smart_switch_modular_chassis)
         self.__pcp.parse_platform_components(root_path)
 
         self.__validate_platform_schema(self.__pcp)
@@ -546,6 +549,9 @@ class ComponentUpdateProvider(PlatformDataProvider):
 
     def __validate_component_map(self, section, pdp_map, pcp_map):
         diff_keys = self.__diff_keys(list(pdp_map.keys()), list(pcp_map.keys()))
+
+        if diff_keys and section == self.SECTION_MODULE and self.is_smart_switch():
+            return
 
         if diff_keys:
             raise RuntimeError(
